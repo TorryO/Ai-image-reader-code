@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Image Reader</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { font-size: 1.4rem; }
+    input[type=text] { width: 100%; padding: .6rem; margin: .5rem 0; box-sizing: border-box; }
+    button { padding: .6rem 1.2rem; cursor: pointer; }
+    img { max-width: 100%; margin-top: 1rem; border-radius: 8px; }
+    #answer { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; border-radius: 8px; margin-top: 1rem; display: none; }
+  </style>
+</head>
+<body>
+  <h1>Let AI read your image</h1>
+  <input type="file" id="file" accept="image/*">
+  <input type="text" id="prompt" placeholder="Ask something (default: describe this image)">
+  <button id="go">Read image</button>
+  <img id="preview" alt="">
+  <div id="answer"></div>
+
+  <script>
+    const fileInput = document.getElementById("file");
+    const preview = document.getElementById("preview");
+    const answer = document.getElementById("answer");
+    const btn = document.getElementById("go");
+
+    fileInput.addEventListener("change", () => {
+      const f = fileInput.files[0];
+      if (f) preview.src = URL.createObjectURL(f);
+    });
+
+    // Shrink the image in the browser so it stays under Vercel's ~4.5 MB request limit.
+    function toBase64Jpeg(file, maxSide = 1568) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", 0.85).split(",")[1]);
+        };
+        img.onerror = reject;
+        img.src = URL.createObjectURL(file);
+      });
+    }
+
+    btn.addEventListener("click", async () => {
+      const f = fileInput.files[0];
+      if (!f) return alert("Choose an image first.");
+      btn.disabled = true;
+      answer.style.display = "block";
+      answer.textContent = "Reading...";
+      try {
+        const image = await toBase64Jpeg(f);
+        const res = await fetch("/api/read", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image,
+            media_type: "image/jpeg",
+            prompt: document.getElementById("prompt").value,
+          }),
+        });
+        const data = await res.json();
+        answer.textContent = data.answer || ("Error: " + data.error);
+      } catch (e) {
+        answer.textContent = "Error: " + e.message;
+      }
+      btn.disabled = false;
+    });
+  </script>
+</body>
+</html>
